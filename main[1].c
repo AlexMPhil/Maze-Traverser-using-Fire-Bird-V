@@ -9,8 +9,10 @@
 #include <util/delay.h>
 
 int ShaftCountRight;
-
 int ShaftCountLeft;
+int count = 0;
+int a = 1;
+int thresh = 183; 
 
 void motion_pin_config (void)
 {
@@ -26,9 +28,9 @@ void timer1_init(void){
 	TIMSK1|=(1<<OCIE1A);
 }
 
-/*ISR(TIMER1_COMPA_vect){
+ISR(TIMER1_COMPA_vect){
 	count++;
-}*/
+}
 void left_encoder_pin_config (void)
 {
 	DDRE = DDRE & 0xEF; //Set the direction of the PORTE 4 pin as input
@@ -76,6 +78,16 @@ ISR(INT5_vect)
 ISR(INT4_vect)
 {
 	ShaftCountLeft++; //increment left shaft position count
+	if(ShaftCountLeft==thresh){
+		ShaftCountLeft=0;
+			if(a==1){
+				a=2;
+			}
+			else{
+				a=1;
+			}
+		
+	}
 }
 
 //isr to be added above
@@ -147,7 +159,7 @@ void linear_distance_mm(unsigned int DistanceInMM)
 	stop(); //Stop robot
 }
 
-//to rotate bot by any angele required
+//to rotate bot by any angle required
 void angle_rotate(unsigned int Degrees)
 {
 	float ReqdShaftCount = 0;
@@ -190,16 +202,34 @@ void soft_left_degrees(unsigned int Degrees)
 
 int main(){
 	init_devices();
-
+	
+/*
 	int distanceTravelled = 0;
 
 	while (distanceTravelled <= 180)
 	{
 		forward_mm(300);
-		distanceTravelled+=30;
 		soft_left_degrees(60);
+		distanceTravelled+=30;
+	}
+*/
+
+	while (1)
+	{
+		switch(a){
+			case 1:
+				thresh=183; 
+				forward_mm(1000);
+				break;
+			case 2:
+				thresh=15;
+				soft_left_degrees(60);
+				break;
+			default:
+				stop();
+				break;
+		}
 	}
 	stop();
 
 }
-
