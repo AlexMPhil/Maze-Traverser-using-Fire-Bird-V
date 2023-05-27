@@ -1,235 +1,215 @@
 /*
  * main.c
  *
- * Created: 5/10/2023 7:25:10 PM
- *  Author: Gagan
+ * Created: 5/20/2023 3:56:31 PM
+ *  Author: dell
  */ 
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <util/delay.h>
+#include <math.h>
 
-int ShaftCountRight;
-int ShaftCountLeft;
-int count = 0;
-int a = 1;
-int thresh = 183; 
+void port_init();
+void timer5_init();
+void velocity(unsigned char, unsigned char);
+
+unsigned char ADC_Conversion(unsigned char);
+unsigned char ADC_Value;
+unsigned char flag = 0;
+unsigned char LW = 0;
+unsigned char CW = 0;
+unsigned char RW = 0;
+
+void adc_pin_config (void)
+{
+	DDRF = 0x00;
+	PORTF = 0x00;
+	DDRK = 0x00;
+	PORTK = 0x00;
+}
 
 void motion_pin_config (void)
 {
-	DDRA = DDRA | 0x0F; //set direction of the PORTA 3 to PORTA 0 pins as output
-	PORTA = PORTA & 0xF0; // set initial value of the PORTA 3 to PORTA 0 pins to logic 0
-	DDRL = DDRL | 0x18; //Setting PL3 and PL4 pins as output for PWM generation
-	PORTL = PORTL | 0x18; //PL3 and PL4 pins are for velocity control using PWM
+	DDRA = DDRA | 0x0F;
+	PORTA = PORTA & 0xF0;
+	DDRL = DDRL | 0x18;   
+	PORTL = PORTL | 0x18; 
 }
 
-void timer1_init(void){
-	TCCR1B|= (1<<WGM12) |(1<<CS12) |(1<<CS10);
-	OCR1A=15625;
-	TIMSK1|=(1<<OCIE1A);
-}
-
-ISR(TIMER1_COMPA_vect){
-	count++;
-}
-void left_encoder_pin_config (void)
+void port_init()
 {
-	DDRE = DDRE & 0xEF; //Set the direction of the PORTE 4 pin as input
-	PORTE = PORTE | 0x10; //Enable internal pull-up for PORTE 4 pin
-}
-void right_encoder_pin_config (void)
-{
-	DDRE = DDRE & 0xDF; //Set the direction of the PORTE 5 pin as input
-	PORTE = PORTE | 0x20; //Enable internal pull-up for PORTE 5 pin
-}
-
-void left_position_encoder_interrupt_init (void) //Interrupt 4 enable
-{
-	cli(); //Clears the global interrupt
-	EICRB = EICRB | 0x02; // INT4 is set to trigger with falling edge
-	EIMSK = EIMSK | 0x10; // Enable Interrupt INT4 for left position encoder
-	sei(); // Enables the global interrupt
-}
-void right_position_encoder_interrupt_init (void) //Interrupt 5 enable
-{
-	cli(); //Clears the global interrupt
-	EICRB = EICRB | 0x08; // INT5 is set to trigger with falling edge
-	EIMSK = EIMSK | 0x20; // Enable Interrupt INT5 for right position encoder
-	sei(); // Enables the global interrupt
-}
-
-void init_devices()
-{
-	cli(); //Clears the global interrupt
+	adc_pin_config();
 	motion_pin_config();
-	timer1_init();
-	left_position_encoder_interrupt_init();
-	right_position_encoder_interrupt_init();
-	sei(); // Enables the global interrupt
 }
 
-
-//have to add isr
-
-ISR(INT5_vect)
+void timer5_init()
 {
-	ShaftCountRight++; //increment right shaft position count
+	TCCR5B = 0x00;	
+	TCNT5H = 0xFF;	
+	TCNT5L = 0x01;	
+	OCR5AH = 0x00;	
+	OCR5AL = 0xFF;	
+	OCR5BH = 0x00;	
+	OCR5BL = 0xFF;	
+	OCR5CH = 0x00;	
+	OCR5CL = 0xFF;	
+	TCCR5A = 0xA9;	
+	TCCR5B = 0x0B;	
 }
 
-ISR(INT4_vect)
+void adc_init()
 {
-	ShaftCountLeft++; //increment left shaft position count
-	if(ShaftCountLeft==thresh){
-		ShaftCountLeft=0;
-			if(a==1){
-				a=2;
-			}
-			else{
-				a=1;
-			}
-		
+	ADCSRA = 0x00;
+	ADCSRB = 0x00;		
+	ADMUX = 0x20;		
+	ACSR = 0x80;
+	ADCSRA = 0x86;		
+}
+
+unsigned char ADC_Conversion(unsigned char Ch)
+{
+	unsigned char a;
+	if(Ch>7)
+	{
+		ADCSRB = 0x08;
 	}
+	Ch = Ch & 0x07;
+	ADMUX= 0x20| Ch;
+	ADCSRA = ADCSRA | 0x40;		
+	while((ADCSRA&0x10)==0);	
+	a=ADCH;
+	ADCSRA = ADCSRA|0x10; 
+	ADCSRB = 0x00;
+	return a;
 }
 
-//isr to be added above
-
+void velocity (unsigned char left_motor, unsigned char right_motor)
+{
+	OCR5AL = (unsigned char)left_motor;
+	OCR5BL = (unsigned char)right_motor;
+}
 
 void motion_set (unsigned char Direction)
 {
 	unsigned char PortARestore = 0;
-	Direction &= 0x0F; // removing upper nibbel as it is not needed
-	PortARestore = PORTA; // reading the PORTA's original status
-	PortARestore &= 0xF0; // setting lower direction nibbel to 0
-	PortARestore |= Direction; // adding lower nibbel for direction command and
-	// restoring the PORTA status
-	PORTA = PortARestore; // setting the command to the port
+
+	Direction &= 0x0F; 		
+	PortARestore = PORTA; 		
+	PortARestore &= 0xF0; 		
+	PortARestore |= Direction; 
+	PORTA = PortARestore; 		
 }
-void forward (void) //both wheels forward
+
+void forward (void)
 {
-	motion_set(0x06);
+	motion_set (0x06);
 }
-void back (void) //both wheels backward
+
+void stop (void)
 {
-	motion_set(0x09);
+	motion_set (0x00);
 }
-void left (void) //Left wheel backward, Right wheel forward
+
+void back (void) 
+{
+ motion_set(0x09);
+} 
+
+void left (void)
 {
 	motion_set(0x05);
 }
-void right (void) //Left wheel forward, Right wheel backward
+
+void right (void)
 {
 	motion_set(0x0A);
 }
-void soft_left (void) //Left wheel stationary, Right wheel forward
+
+void init_devices (void)
 {
-	motion_set(0x04);
-}
-void soft_right (void) //Left wheel forward, Right wheel is stationary
-{
-	motion_set(0x02);
-}
-void soft_left_2 (void) //Left wheel backward, right wheel stationary
-{
-	motion_set(0x01);
-}
-void soft_right_2 (void) //Left wheel stationary, Right wheel backward
-{
-	motion_set(0x08);
-}
-void stop (void) //hard stop if PORTL 3 and PORTL 4 pins are at logic 1
-{
-	motion_set(0x00);
+	cli(); //Clears the global interrupts
+	port_init();
+	adc_init();
+	timer5_init();
+	sei();   //Enables the global interrupts
 }
 
-//function to give a linear motion to the bot(forward or backward)
-void linear_distance_mm(unsigned int DistanceInMM)
+int main(void)
 {
-	float ReqdShaftCount = 0;
-	unsigned long int ReqdShaftCountInt = 0;
-	ReqdShaftCount = DistanceInMM / 5.338; // division by resolution to get shaft count
-	ReqdShaftCountInt = (unsigned long int) ReqdShaftCount;
-	
-	ShaftCountRight = 0;
-	while(1)
-	{
-		if(ShaftCountRight > ReqdShaftCountInt)
-		{
-			break;
-		}
-	}
-	stop(); //Stop robot
-}
-
-//to rotate bot by any angle required
-void angle_rotate(unsigned int Degrees)
-{
-	float ReqdShaftCount = 0;
-	unsigned long int ReqdShaftCountInt = 0;
-	ReqdShaftCount = (float) Degrees/ 4.090; // division by resolution to get shaft count
-	ReqdShaftCountInt = (unsigned int) ReqdShaftCount;
-	ShaftCountRight = 0;
-	ShaftCountLeft = 0;
-	while (1)
-	{
-		if((ShaftCountRight >= ReqdShaftCountInt) | (ShaftCountLeft >= ReqdShaftCountInt))
-		break;
-	}
-	stop(); //Stop robot
-}
-
-//to go forward
-void forward_mm(unsigned int DistanceInMM)
-{
-	forward();
-	linear_distance_mm(DistanceInMM);
-}
-
-//to go backward
-void back_mm(unsigned int DistanceInMM)
-{
-	back();
-	linear_distance_mm(DistanceInMM);
-}
-
-
-
-void soft_left_degrees(unsigned int Degrees)
-{
-	// 176 pulses for 360 degrees rotation 2.045 degrees per count
-	soft_left(); //Turn soft left
-	Degrees=Degrees*2;
-	angle_rotate(Degrees);
-}
-
-int main(){
 	init_devices();
 	
-/*
-	int distanceTravelled = 0;
-
-	while (distanceTravelled <= 180)
+	while(1)
 	{
-		forward_mm(300);
-		soft_left_degrees(60);
-		distanceTravelled+=30;
-	}
-*/
 
-	while (1)
-	{
-		switch(a){
-			case 1:
-				thresh=183; 
-				forward_mm(1000);
-				break;
-			case 2:
-				thresh=15;
-				soft_left_degrees(60);
-				break;
-			default:
+
+		LW = ADC_Conversion(3); //Getting data of Left WL Sensor
+		CW = ADC_Conversion(2); //Getting data of Center WL Sensor
+		RW = ADC_Conversion(1); //Getting data of Right WL Sensor
+
+
+		
+		if (LW > 0x28 && CW <=0x28 && RW > 0x28)//Straight path
+		{
+			forward();
+			velocity(50,50);
+		}
+
+
+		if (LW <= 0x28 && CW >0x28 && RW > 0x28)//Left turn
+		{
+			velocity(20,40);
+		}
+
+
+		if (LW > 0x28 && CW > 0x28 && RW <= 0x28)//Right Turn
+		{
+			velocity(40,20);
+		}
+
+
+		if (LW <= 0x28 && CW >0x28 && RW <= 0x28)//T Intersection
+		{
+			velocity(20,40);// As left is possible
+		}
+
+
+		if (LW <= 0x28 && CW <=0x28 && RW > 0x28)//Left T Intersection
+		{
+			velocity(20,40);// As Left is possible
+		}
+
+
+		if (LW > 0x28 && CW <=0x28 && RW <= 0x28)//Right T Tntersection
+		{
+			forward();
+			velocity(50,50);//As Straight path is possible
+		}
+
+
+		if (LW > 0x28 && CW >0x28 && RW > 0x28)//Dead End
+		{
+			back();
+			velocity(50,50); //As no other direction is possible
+		}
+
+
+		if (LW <= 0x28 && CW <=0x28 && RW <= 0x28)
+		{
+			forward();
+			velocity(50,50);
+			_delay_ms(1000);
+			stop();
+
+
+			if (LW <= 0x28 && CW <=0x28 && RW <= 0x28)
+			{   //mazde has ended
 				stop();
-				break;
+			}
+			else
+			{
+				velocity(20,40);
+			}
 		}
 	}
-	stop();
-
 }
